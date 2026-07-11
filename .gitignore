@@ -1,0 +1,25 @@
+# ===== 账号数据（含 B站登录凭证，严禁提交） =====
+accounts/
+# 用户的多账号备份包（含真实 SESSDATA，严禁提交）
+花花Bot.zip
+BilibiliDanmuRobot多账号管理.zip
+*.zip
+
+# ===== 运行时数据（账号注册表/模板/日志，可由程序重建） =====
+data/
+
+# ===== 会话/编辑器/系统 =====
+.zcode/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap align-items-center mb-3 gap-2">
+  <h4 class="mb-0">盲盒盈亏看板</h4>
+  <div class="ms-auto d-flex align-items-center gap-2">
+    <label class="form-label mb-0 small text-muted">主播</label>
+    <select class="form-select form-select-sm" id="streamer-sel" style="width:auto" onchange="onStreamerChange()"></select>
+    <label class="form-label mb-0 small text-muted">年份</label>
+    <select class="form-select form-select-sm" id="year-sel" style="width:auto" onchange="load()">
+      <option value="">全部</option>
+    </select>
+  </div>
+</div>
+
+<div id="empty-hint" class="text-center text-muted py-5" style="display:none">
+  暂无账号。请先在「总览」页从 zip 导入账号，或「新增账号」。
+</div>
+
+<div id="panel">
+  <div class="row g-3 mb-3">
+    <div class="col"><div class="card text-center"><div class="card-body"><div class="text-muted small">总开盒数</div><div class="fs-5" id="s-opens">-</div></div></div></div>
+    <div class="col"><div class="card text-center"><div class="card-body"><div class="text-muted small">总成本(元)</div><div class="fs-5" id="s-cost">-</div></div></div></div>
+    <div class="col"><div class="card text-center"><div class="card-body"><div class="text-muted small">总收入(元)</div><div class="fs-5" id="s-income">-</div></div></div></div>
+    <div class="col"><div class="card text-center"><div class="card-body"><div class="text-muted small">总盈亏(元)</div><div class="fs-5" id="s-profit">-</div></div></div></div>
+  </div>
+
+  <div class="card mb-3"><div class="card-body">
+    <div class="text-muted small mb-2">月度盈亏趋势 — <span id="cur-name"></span></div>
+    <canvas id="trend" height="90"></canvas>
+  </div></div>
+
+  <div class="card"><div class="card-header">盲盒名盈亏排行</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover tbl-compact mb-0">
+        <thead class="table-light"><tr><th>盲盒名</th><th>开盒数</th><th>成本(元)</th><th>收入(元)</th><th class="text-end">盈亏(元)</th></tr></thead>
+        <tbody id="box-rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let trendChart=null;
+const UNIT=1000;
+const yuan=v=>(v/UNIT).toLocaleString('zh-CN',{maximumFractionDigits:2});
+const pf=v=>`<span class="${v>=0?'profit-pos':'profit-neg'}">${v>=0?'+':''}${yuan(v)}</span>`;
+
+function $(id){return document.getElementById(id);}
+
+async function load(){
+  const sid=$('streamer-sel').value;
+  const year=$('year-sel').value;
+  if(!sid){$('panel').style.display='none';$('empty-hint').style.display='block';return;}
+  const r=await fetch(`/api/blindbox?account_id=${sid}${year?'&year='+year:''}`);
+  const j=await r.json();
+  // 年份下拉（基于该主播可用月份）
+  const ys=new Set(); for(const m of (j.current?.months||[])) ys.add(m.year);
+  const cur=[...$('year-sel').options].map(o=>o.value);
+  for(const y of [...ys].sort((a,b)=>b-a)){
+    if(!cur.includes(String(y))){const o=document.createElement('option');o.value=y;o.textContent=y+'年';$('year-sel').appendChild(o);}
+  }
+  const c=j.current;
+  $('cur-name').textContent = c ? `${c.nickname}（房间 ${c.roomid||'-'}）` : '';
+  if(!c){$('s-opens').textContent='-';$('s-cost').textContent='-';$('s-income').textContent='-';$('s-profit').textContent='-';$('box-rows').innerHTML='<tr><td colspan=5 class="text-muted text-center">该主播暂无盲盒数据</td></tr>';drawTrend([],[]);return;}
+  $('s-opens').textContent=c.total.opens.toLocaleString();
+  $('s-cost').textContent=yuan(c.total.cost);
+  $('s-income').textContent=yuan(c.total.income);
+  $('s-profit').innerHTML=pf(c.total.profit);
+  // 趋势图
+  const labels=c.monthly.map(m=>`${m.year}-${String(m.month).padStart(2,'0')}`);
+  const data=c.monthly.map(m=>+(m.profit/UNIT).toFixed(2));
+  drawTrend(labels,data);
+  // 盲盒排行
+  $('box-rows').innerHTML=(c.boxes||[]).map(b=>`<tr>
+    <td>${b.name}</td><td>${b.opens.toLocaleString()}</td>
+    <td>${yuan(b.cost)}</td><td>${yuan(b.income)}</td>
+    <td class="text-end">${pf(b.profit)}</td></tr>`).join('')||'<tr><td colspan=5 class="text-muted text-center">无数据</td></tr>';
+}
+function drawTrend(labels,data){
+  const colors=data.map(v=>v>=0?'rgba(40,167,69,.7)':'rgba(220,53,69,.7)');
+  if(trendChart)trendChart.destroy();
+  trendChart=new Chart($('trend'),{type:'bar',
+    data:{labels,datasets:[{label:'月度盈亏(元)',data,backgroundColor:colors,borderRadius:3}]},
+    options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+}
+function onStreamerChange(){ $('year-sel').innerHTML='<option value="">全部</option>'; load(); }
+
+// 初始化：先拉一次拿主播列表填充下拉
+(async function init(){
+  const r=await fetch('/api/blindbox'); const j=await r.json();
+  const sel=$('streamer-sel');
+  if(!j.streamers||!j.streamers.length){$('panel').style.display='none';$('empty-hint').style.display='block';return;}
+  sel.innerHTML=j.streamers.map(s=>`<option value="${s.id}">${s.nickname}</option>`).join('');
+  load();
+})();
+</script>
+{% endblock %}

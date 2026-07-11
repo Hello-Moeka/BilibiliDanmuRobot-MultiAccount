@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap align-items-center mb-3 gap-2">
+  <h4 class="mb-0 me-auto">{{ account.nickname }}
+    <span class="badge text-bg-light border">{{ account.version or '未知版本' }}</span>
+  </h4>
+  <button class="btn btn-sm btn-outline-primary" onclick="act('start')">启动</button>
+  <button class="btn btn-sm btn-outline-danger" onclick="act('stop')">停止</button>
+  <button class="btn btn-sm btn-outline-secondary" onclick="act('restart')">重启</button>
+  <button class="btn btn-sm btn-outline-secondary" onclick="refresh()">刷新缓存</button>
+  <button class="btn btn-sm btn-danger" onclick="del()">删除账号</button>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row small">
+      <div class="col-md-3"><span class="text-muted">房间号：</span>{{ account.roomid or '-' }}</div>
+      <div class="col-md-3"><span class="text-muted">机器人名：</span>{{ account.robotname or '-' }}</div>
+      <div class="col-md-3"><span class="text-muted">模式：</span>{{ account.robotmode or '-' }}</div>
+      <div class="col-md-3"><span class="text-muted">Token：</span>{% if account.has_token %}<span class="badge text-bg-success">已登录</span>{% else %}<span class="badge text-bg-warning">未登录</span>{% endif %}</div>
+      <div class="col-12 mt-2"><span class="text-muted">工作目录：</span><code>{{ account.dir_path }}</code></div>
+    </div>
+  </div>
+</div>
+
+<ul class="nav nav-tabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-config">配置（只读）</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-token">Token 管理</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-logs" onclick="loadLogs()">日志</button></li>
+</ul>
+<div class="tab-content pt-3">
+  <div class="tab-pane fade show active" id="tab-config">
+    <div class="text-muted small mb-2">红线：仅只读查看，本面板不修改配置文件。修改请到 GUI 内进行。</div>
+    <pre class="bg-dark text-light p-3 rounded" id="config-box" style="max-height:60vh;overflow:auto">加载中…</pre>
+  </div>
+  <div class="tab-pane fade" id="tab-token">
+    <div class="mb-3">
+      <button class="btn btn-outline-primary btn-sm" onclick="loginCheck()">校验登录态</button>
+      <span id="login-result" class="ms-2 small"></span>
+    </div>
+    <label class="form-label small">导入 / 更新 Token（粘贴 JSON 或 <code>k=v;</code> 文本）</label>
+    <textarea class="form-control mb-2" id="token-input" rows="4" placeholder='{"SESSDATA":"...","bili_jct":"...","DedeUserID":"..."}'></textarea>
+    <button class="btn btn-success btn-sm" onclick="importToken()">导入 Token</button>
+    <hr>
+    <div class="small text-muted">当前 bili_token.json：</div>
+    <pre class="bg-dark text-light p-2 rounded small" id="token-box" style="max-height:30vh;overflow:auto">加载中…</pre>
+  </div>
+  <div class="tab-pane fade" id="tab-logs">
+    <div id="log-files" class="mb-2"></div>
+    <pre class="bg-dark text-light p-3 rounded" id="log-box" style="max-height:55vh;overflow:auto">选择上方日志文件查看</pre>
+  </div>
+</div>
+
+<div id="toast" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const AID={{ account.id }};
+function toast(m,t='info'){document.getElementById('toast').innerHTML=`<div class="toast show text-bg-${t}"><div class="toast-body">${m}</div></div>`;}
+async function act(action){const r=await fetch(`/api/accounts/${AID}/${action}`,{method:'POST'});const j=await r.json();toast(j.msg, j.ok?'success':'danger');}
+async function refresh(){const r=await fetch(`/api/accounts/${AID}/refresh`,{method:'POST'});const j=await r.json();toast(j.msg||'已刷新', j.ok?'success':'danger');setTimeout(()=>location.reload(),800);}
+async function del(){
+  if(!confirm('确认删除此账号？\n\n将同步删除其项目目录（exe / 配置 / Token / 数据库 / 日志），不可恢复！'))return;
+  const r=await fetch(`/api/accounts/${AID}/delete`,{method:'POST'});
+  const j=await r.json();
+  if(j.ok){alert(j.msg);location.href='/';}
+  else toast(j.msg,'danger');
+}
+
+async function loadConfig(){
+  const r=await fetch(`/api/accounts/${AID}/config`); const j=await r.json();
+  document.getElementById('config-box').textContent = j.ok ? JSON.stringify(j.config,null,2) : '（无配置文件）';
+}
+async function loadToken(){
+  const r=await fetch(`/api/accounts/${AID}/token`); const j=await r.json();
+  document.getElementById('token-box').textContent = j.json ? JSON.stringify(j.json,null,2) : '（无 token）';
+}
+async function importToken(){
+  const raw=document.getElementById('token-input').value;
+  if(!raw.trim()){toast('请粘贴 token','warning');return;}
+  const r=await fetch(`/api/accounts/${AID}/token`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({raw})});
+  const j=await r.json();toast(j.msg, j.ok?'success':'danger');if(j.ok)loadToken();
+}
+async function loginCheck(){
+  document.getElementById('login-result').textContent='校验中…';
+  const r=await fetch(`/api/accounts/${AID}/login-check`); const j=await r.json();
+  document.getElementById('login-result').innerHTML = j.logged_in
+    ? `<span class="text-success">✓ 已登录 UID ${j.uid} (${j.uname||''})</span>`
+    : `<span class="text-danger">✗ ${j.reason||'未登录'}</span>`;
+}
+async function loadLogs(){
+  const r=await fetch(`/api/accounts/${AID}/logs`); const j=await r.json();
+  const box=document.getElementById('log-files');
+  if(!j.files||!j.files.length){box.innerHTML='<span class="text-muted small">暂无日志</span>';return;}
+  box.innerHTML = j.files.map(f=>`<button class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="viewLog('${f.name}')">${f.name} <span class="badge text-bg-light">${(f.size/1024).toFixed(0)}K</span></button>`).join('');
+}
+async function viewLog(name){
+  const r=await fetch(`/api/accounts/${AID}/logs?name=${encodeURIComponent(name)}&tail=300`); const j=await r.json();
+  const box=document.getElementById('log-box');
+  box.textContent = j.ok ? j.lines.join('\n') : ('读取失败：'+j.msg);
+}
+loadConfig(); loadToken();
+</script>
+{% endblock %}
