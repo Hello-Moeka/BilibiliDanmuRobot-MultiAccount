@@ -87,3 +87,7 @@ BilibiliDanmuRobot多账号管理/
 
 ## 依赖
 `Flask`、`PyYAML`、`psutil`、`requests`（见 `manager/requirements.txt`）。前端 Bootstrap 5 + Chart.js 走 CDN。
+
+## 许可证
+
+本项目基于 [GPL-3.0](LICENSE) 协议开源。
