@@ -90,4 +90,4 @@ BilibiliDanmuRobot多账号管理/
 
 ## 许可证
 
-本项目基于 [GPL-3.0](LICENSE) 协议开源。
+本项目基于 [AGPL-3.0](LICENSE) 协议开源。
